@@ -24,4 +24,4 @@ I just want a task manager that works, is easy to install, and is similiar to th
 
 
 #### Preview of the current phase in development:
-![screenshot](https://github.com/vExcess/TuxTaskManager/blob/main/preview.png?raw=true)
+![screenshot](https://github.com/vExcess/TuxTaskManager/blob/master/preview.png?raw=true)
