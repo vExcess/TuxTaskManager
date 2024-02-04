@@ -2,6 +2,7 @@
 Task Manager for Linux. TuxTaskManger's backend is written in Rust which is blazingly fast™ 🚀.
 
 #### The app isn't available for download yet and it's still in the very early phases of development, but it's coming along nicely. Should have a version 1.0 out soon.
+#### Edit: It seems Tauri has a memory leak or something so I need to find a new framework to create the app. Until then development is paused.
 
 ## About
 Linux has Gnome System Monitor, but I personally prefer the design of Windows Task Manager.  
