@@ -1,3 +1,6 @@
+.dart_tool/
+dist/tuxtaskmanager
+
 # Logs
 logs
 *.log
