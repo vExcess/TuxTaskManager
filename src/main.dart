@@ -1,4 +1,3 @@
-import 'dart:ffi';
 import 'dart:math' as Math;
 import 'dart:async';
 
@@ -10,7 +9,9 @@ import 'package:drawlite/drawlite.dart'
 import 'package:drawlite/dl.dart';
 import 'package:drawlite/drawlite-touch.dart';
 
-import 'systeminfo/cpu.dart';
+import 'systeminfo/systeminfo.dart';
+import 'PerformancePage.dart';
+import 'pages.dart';
 
 late Drawlite dl;
 
@@ -62,142 +63,9 @@ void drawGraph(int x, int y, int w, int h, Color clr, List<double> data, bool gr
     rect(x, y, w, h);
 }
 
-class PerformanceSubPage {
-    Color color;
-    String title;
-    List<double> data = [];
-    CPUInfo info;
-
-    PerformanceSubPage({
-        required this.color,
-        required this.title,
-        required this.info
-    }) {
-        this.data = List.filled(60, 0);
-    }
-
-    void renderSidebarItem(int y, bool selected) {
-        if (selected) {
-            noStroke();
-            fill(205, 232, 255);
-            rect(0, y, 211, 70);
-        }
-
-        drawGraph(5, y + 5, 72, 59, this.color, this.data, false);
-
-        fill(0);
-        textAlign(LEFT, BOTTOM);
-        textSize(20);
-        text(this.title, 88, 76);
-
-        textSize(15);
-        text("${this.info.utilization.toInt()}% ${(this.info.clockSpeed / 1000.0).toStringAsFixed(2)} GHz", 88, 95);
-    }
-
-    void renderPage() {
-        final leftEdge = 212 + 15;
-        final pageWidth = (width - (212 + 15 * 2)).toInt();
-        final rightEdge = leftEdge + pageWidth;
-
-        fill(0);
-        textSize(26);
-        textAlign(LEFT, BOTTOM);
-        text(this.title, leftEdge, 84);
-
-        textSize(18);
-        textAlign(RIGHT, BOTTOM);
-        text(this.info.name, rightEdge, 84);
-
-        textSize(14);
-        fill(112);
-        textAlign(LEFT, BOTTOM);
-        text("% Utilization over 60 seconds", leftEdge, 107);
-        textAlign(RIGHT, BOTTOM);
-        text("100%", rightEdge, 107);
-
-        drawGraph(leftEdge, 110, pageWidth, (height - 310).toInt(), this.color, this.data, true);
-
-        List<List<String>> labels = [
-            ["Utilization", "Speed"],
-            ["Processes", "Threads", "Handles"],
-            ["Uptime"],
-        ];
-        textSize(15);
-        fill(112);
-        textAlign(LEFT, BOTTOM);
-        for (int y = 0; y < labels.length; y++) {
-            for (int x = 0; x < labels[y].length; x++) {
-                text(labels[y][x], leftEdge + x * 100, height - (137 + 32) + y * 62);
-            }    
-        }
-
-        final up = this.info.uptime;
-        final days =    ((up / 60 / 60 / 24)).toInt().toString();
-        final hours =   ((up / 60 / 60) % 24).toInt().toString().padLeft(2, "0");
-        final minutes = ((up / 60) % 60).toInt().toString().padLeft(2, "0");
-        final seconds = ((up % 60)).toInt().toString().padLeft(2, "0");
-        List<List<String>> values = [
-            ["${this.info.utilization.toInt()}%", "${(this.info.clockSpeed / 1000.0).toStringAsFixed(2)} GHz"],
-            ["${this.info.runningProcessCount}", "${this.info.runningThreadCount}", "${this.info.handlesCount}"],
-            ["${days}:${hours}:${minutes}:${seconds}"],
-        ];
-        textSize(24);
-        fill(0);
-        textAlign(LEFT, BOTTOM);
-        for (int y = 0; y < values.length; y++) {
-            for (int x = 0; x < values[y].length; x++) {
-                text(values[y][x], leftEdge + x * 100, height - 137 + y * 62);
-            }    
-        }
-
-        List<String> sideLabels = [
-            "Base speed:",
-            "Sockets:",
-            "Cores:",
-            "Logical processors:",
-            "Virtualization:",
-            "L1 cache:",
-            "L2 cache:",
-            "L3 cache:",
-        ];
-        textSize(15);
-        fill(112);
-        textAlign(LEFT, BOTTOM);
-        for (int y = 0; y < sideLabels.length; y++) {
-            text(sideLabels[y], leftEdge + 300, height - (137 + 32) + y * 22);
-        }
-
-        List<String> sideValues = [
-            this.info.baseClock,
-            "1",
-            this.info.coreCount.toString(),
-            this.info.threadCount.toString(),
-            this.info.virtualization ? "Enabled" : "Disabled",
-            this.info.l1Cache,
-            this.info.l2Cache,
-            this.info.l3Cache,
-        ];
-        textSize(15);
-        fill(0);
-        textAlign(LEFT, BOTTOM);
-        for (int y = 0; y < sideValues.length; y++) {
-            text(sideValues[y], leftEdge + 450, height - (137 + 32) + y * 22);
-        }
-    }
-
-    void update() {
-        this.info.updateDynamicStats();
-
-        var data = this.data;
-        final len = data.length;
-        for (int i = 0; i < len; i++) {
-            data[i] = (i + 1 < len) ? data[i + 1] : (this.info.utilization / 100);
-        }
-    }
-}
-
-int selectedPerformancePage = 0;
-late List<PerformanceSubPage> performancePages;
+late List<PerformancePage> performancePages;
+int selectedPerformancePage = 1;
+int sidebarEnd = 211;
 
 void draw() {
     // check for events
@@ -225,26 +93,30 @@ void draw() {
     }
 
     // Processes, Performance, App History, Startup, Users, Details, Services
-    stroke(217);
+    fill(217);
+    rect(0, 45, width, 1);
+    rect(sidebarEnd, 50, 1, height - 55);
+
     const tabLabels = ["Processes", "Performance", "App History", "Startup", "Users", "Details", "Services"];
     x = 0;
     for (int i = 0; i < tabLabels.length; i++) {
         final label = tabLabels[i];
-        final tabWidth = textWidth(label) + 14;
+        final tabWidth = (textWidth(label) + 14).round();
 
+        stroke(217);
         fill(240);
         rect(x, 22, tabWidth, 23);
+        if (label == "Performance") {
+            noStroke();
+            fill(255);
+            rect(x+1, 23, tabWidth-1, 24);
+        }
 
         fill(0);
         text(label, x + 8, 22 + 21);
 
         x += tabWidth;
     }
-    
-    fill(217);
-    rect(0, 45, width, 1);
-    rect(211, 50, 1, height - 55);
-
     
     int y = 50;
     for (int i = 0; i < performancePages.length; i++) {
@@ -254,8 +126,13 @@ void draw() {
         if (selected) {
             page.renderPage();
         }
+        if (point_rect(get.mouseX, get.mouseY, 0, y, 211, 70)) {
+            noFill();
+            stroke(0, 100, 255);
+            rect(0, y, 211, 69);
+        }
         y += 70;
-    }   
+    }
 
     window.render();
 
@@ -274,7 +151,13 @@ void mouseDragged(MouseEvent event) {
 }
 
 void mouseReleased(MouseEvent event) {
-    
+    int y = 50;
+    for (int i = 0; i < performancePages.length; i++) {
+        if (point_rect(get.mouseX, get.mouseY, 0, y, 211, 70)) {
+            selectedPerformancePage = i;
+        }
+        y += 70;
+    }
 }
 
 var running = true;
@@ -384,13 +267,7 @@ Future<void> main() async {
     width = rwidth / appScale;
     height = rheight / appScale;
 
-    performancePages = [
-        PerformanceSubPage(
-            color: color(17, 125, 187),
-            title: "CPU",
-            info: await CPUInfo.thisDeviceInfo()
-        )
-    ];
+    performancePages = await createPerformancePages();
 
     Timer.periodic(Duration(seconds: 1), (_) {
         for (final page in performancePages) {

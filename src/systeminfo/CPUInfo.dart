@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'HardwareInfo.dart';
+import 'utils.dart';
 
 var cpuDatas = [
 ["AMD Ryzen AI Max+ PRO 395",16,32,"3GHZ","5.1GHZ","","16 MB","64 MB",55,"Radeon 8060S Graphics",40,"2900MHZ"],
@@ -634,22 +636,18 @@ var cpuDatas = [
 ["B57",2,2,"3.2GHZ","","","1 MB","",80,"",0,""],
 ];
 
-String stringFromFreq(double freq) {
-    final str = freq.toString();
-    final idx = str.indexOf("00");
-    return str.substring(0, idx == -1 ? str.length : idx);
-}
-
-class CPUInfo {
+class CPUInfo extends Hardwareinfo {
     // static info
-    String name;
     int coreCount;
     int threadCount;
     String baseClock;
     String boostClock;
-    String l1Cache;
-    String l2Cache;
-    String l3Cache;
+    int l1Cache;
+    int l2Cache;
+    int l3Cache;
+    String l1CacheParenText = "";
+    String l2CacheParenText = "";
+    String l3CacheParenText = "";
     bool virtualization;
     String tdp;
     String iGPUName;
@@ -657,8 +655,8 @@ class CPUInfo {
     String iGPUClock;
 
     // dynamic info
-    double clockSpeed = 0;
-    double utilization = 0;
+    double avgClockSpeed = 0;
+    double maxClockSpeed = 0;
     double uptime = 0;
     int runningProcessCount = 0;
     int runningThreadCount = 0;
@@ -668,7 +666,7 @@ class CPUInfo {
     int _prevIdle = 0;
 
     CPUInfo({
-        required this.name,
+        required super.name,
         required this.coreCount,
         required this.threadCount,
         required this.baseClock,
@@ -690,9 +688,9 @@ class CPUInfo {
             threadCount: row[2],
             baseClock: row[3].replaceFirst("GHZ", " GHz").replaceFirst("MHZ", " MHz"),
             boostClock: row[4].replaceFirst("GHZ", " GHz").replaceFirst("MHZ", " MHz"),
-            l1Cache: row[5],
-            l2Cache: row[6],
-            l3Cache: row[7],
+            l1Cache: parseByteAmountString(row[5]),
+            l2Cache: parseByteAmountString(row[6]),
+            l3Cache: parseByteAmountString(row[7]),
             virtualization: false,
             tdp: row[8].toString() + " W",
             iGPUName: row[9],
@@ -723,9 +721,9 @@ class CPUInfo {
             threadCount: 0,
             baseClock: "",
             boostClock: "",
-            l1Cache: "",
-            l2Cache: "",
-            l3Cache: "",
+            l1Cache: 0,
+            l2Cache: 0,
+            l3Cache: 0,
             virtualization: false,
             tdp: "",
             iGPUName: "",
@@ -759,52 +757,51 @@ class CPUInfo {
         if (lscpuInfo["cpu max MHz"] != null) {
             var boostClock = double.parse(lscpuInfo["cpu max MHz"]!);
             if (boostClock >= 1000) {
-                lookupInfo.boostClock = stringFromFreq(boostClock / 1000) + " Ghz";
+                lookupInfo.boostClock = noZeroesToFixed(boostClock / 1000) + " Ghz";
             } else {
-                lookupInfo.boostClock = stringFromFreq(boostClock) + " Mhz";
+                lookupInfo.boostClock = noZeroesToFixed(boostClock) + " Mhz";
             }
         }
 
         // L3 cache
         if (lscpuInfo["l3 cache"] != null) {
             final data = lscpuInfo["l3 cache"]!;
-            lookupInfo.l3Cache = data.substring(0, data.indexOf("(")).trim().replaceFirst("MiB", "MB").replaceFirst("KiB", "KB");
+            lookupInfo.l3Cache = parseByteAmountString(data);
             if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l3Cache += " (per core)";
+                lookupInfo.l3CacheParenText = "per core";
             } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l3Cache += " (per thread)";
+                lookupInfo.l3CacheParenText = "per thread";
             } else if (data.contains("1 instance")) {
-                lookupInfo.l3Cache += " (shared)";
+                lookupInfo.l3CacheParenText = "shared";
             }
         }
         
         // L2 cache
         if (lscpuInfo["l2 cache"] != null) {
             final data = lscpuInfo["l2 cache"]!;
-            lookupInfo.l2Cache = data.substring(0, data.indexOf("(")).trim().replaceFirst("MiB", "MB").replaceFirst("KiB", "KB");
+            lookupInfo.l2Cache = parseByteAmountString(data);
             if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l2Cache += " (per core)";
+                lookupInfo.l2CacheParenText = "per core";
             } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l2Cache += " (per thread)";
+                lookupInfo.l2CacheParenText = "per thread";
             } else if (data.contains("1 instance")) {
-                lookupInfo.l2Cache += " (shared)";
+                lookupInfo.l2CacheParenText = "shared";
             }
         }
         
         // L1 Cache
         if (lscpuInfo["l1d cache"] != null) {
             final data = lscpuInfo["l1d cache"]!;
-            lookupInfo.l1Cache = data.substring(0, data.indexOf("(")).trim().replaceFirst("MiB", "MB").replaceFirst("KiB", "KB");
             if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l1Cache += " (per core)";
+                lookupInfo.l1CacheParenText = "per core";
             } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l1Cache += " (per thread)";
+                lookupInfo.l1CacheParenText = "per thread";
             } else if (data.contains("1 instance")) {
-                lookupInfo.l1Cache += " (shared)";
+                lookupInfo.l1CacheParenText = "shared";
             }
-            final dSz = int.parse(lscpuInfo["l1d cache"]!.substring(0, lscpuInfo["l1d cache"]!.indexOf(" ")));
-            final iSz = int.parse(lscpuInfo["l1i cache"]!.substring(0, lscpuInfo["l1i cache"]!.indexOf(" ")));
-            lookupInfo.l1Cache = "${dSz + iSz}${lookupInfo.l1Cache.substring(lookupInfo.l1Cache.indexOf(" "))}";
+            final dSz = parseByteAmountString(lscpuInfo["l1d cache"]!);
+            final iSz = parseByteAmountString(lscpuInfo["l1i cache"]!);
+            lookupInfo.l1Cache = dSz + iSz;
         }
 
         // Virtualization Enabled
@@ -823,17 +820,22 @@ class CPUInfo {
         // update clock speed
         final cpuinfoFile = File("/proc/cpuinfo");
         final logicalCoreInfoStrings = (await cpuinfoFile.readAsString()).trimRight().split("\n\n");
-        this.clockSpeed = 0.0;
+        this.avgClockSpeed = 0.0;
+        this.maxClockSpeed = 0.0;
         logicalCoreInfoStrings.forEach((logicalCoreInfo) {
             logicalCoreInfo.split("\n").forEach((propStr) {
                 final colonIdx = propStr.indexOf(":");
                 final propName = propStr.substring(0, colonIdx).trimRight();
                 if (propName == "cpu MHz") {
-                    this.clockSpeed += double.parse(propStr.substring(colonIdx + 2));
+                    final speed = double.parse(propStr.substring(colonIdx + 2));
+                    if (speed > this.maxClockSpeed) {
+                        this.maxClockSpeed = speed;
+                    }
+                    this.avgClockSpeed += speed;
                 }
             });
         });
-        this.clockSpeed /= logicalCoreInfoStrings.length;
+        this.avgClockSpeed /= logicalCoreInfoStrings.length;
 
         // update utilization
         // https://www.linuxhowtos.org/System/procstat.htm
@@ -908,8 +910,7 @@ class CPUInfo {
         var idx = handlesResStr.indexOf("=");
         // find number
         while (true) {
-            final chCode = handlesResStr.codeUnitAt(idx);
-            if (chCode >= 48 && chCode <= 57) {
+            if (isNumber(handlesResStr.codeUnitAt(idx))) {
                 break;
             }
             idx++;

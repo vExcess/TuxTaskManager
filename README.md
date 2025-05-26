@@ -40,6 +40,8 @@ I don't know cringe languages such as Python (SysMonTask), C (Mission Center), a
 ## Build Locally
 Compiling TuxTaskManager requires Dart. Install these other dependencies as well:  
 `sudo apt-get install build-essential libsdl2-dev libcairo2-dev libpango1.0-dev libpng-dev libjpeg-dev libgif-dev`  
+util-linux is for lscpu, procps is for sysctl  
+`sudo apt install util-linux procps pkexec dmidecode`  
 Then run:  
 `dart compile exe src/main.dart -o dist/tuxtaskmanager`
 
