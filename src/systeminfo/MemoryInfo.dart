@@ -1,13 +1,43 @@
 import 'dart:io';
+import 'package:drawlite/dl.dart';
+
 import 'HardwareInfo.dart';
 import 'utils.dart';
+
+class RAMStickInfo {
+    int size;
+    String type;
+    int baseSpeed;
+    int speed;
+    String manufacturer;
+    String partName;
+
+    RAMStickInfo({
+        required this.size,
+        required this.type,
+        required this.baseSpeed,
+        required this.speed,
+        required this.manufacturer,
+        required this.partName,
+    });
+
+    String toString() {
+        return """RAMStickInfo{
+    size: ${this.size},
+    type: ${this.type},
+    baseSpeed: ${this.baseSpeed},
+    speed: ${this.speed},
+    manufacturer: ${this.manufacturer},
+    partName: ${this.partName},
+}""";
+    }
+}
 
 class Memoryinfo extends Hardwareinfo {
     // static info
     String speed;
     int capacity;
     int slotsUsed;
-    int slotCapacity;
     String formFactor;
     int hardwareReserved;
     int size;
@@ -24,7 +54,6 @@ class Memoryinfo extends Hardwareinfo {
         required this.speed,
         required this.capacity,
         required this.slotsUsed,
-        required this.slotCapacity,
         required this.formFactor,
         required this.hardwareReserved,
         required this.size,
@@ -38,11 +67,10 @@ class Memoryinfo extends Hardwareinfo {
     static Future<Memoryinfo> thisDeviceInfo() async {
         Memoryinfo lookupInfo = Memoryinfo(
             name: "Unknown RAM",
-            speed: "",
+            speed: "Unknown",
             capacity: 0,
             slotsUsed: 0,
-            slotCapacity: 0,
-            formFactor: "",
+            formFactor: "Unknown",
             hardwareReserved: 0,
             size: 0,
             swapSize: 0,
@@ -52,14 +80,92 @@ class Memoryinfo extends Hardwareinfo {
             cached: 0,
         );
 
-        lookupInfo.updateDynamicStats();
+        List<dynamic> resultsAll = await Future.wait([
+            Process.run("pkexec", ["dmidecode", "--type", "17"]),
+            lookupInfo.updateDynamicStats()
+        ]);
+        
+        final res = resultsAll[0];
+        List<RAMStickInfo> ramSticks = [];
+        res.stdout.split("\n\n").forEach((String str) {
+            final lines = str.trim().split("\n");
+            if (lines.length >= 2 && lines[1] == "Memory Device") {
+                int size = 0;
+                String type = "DDR";
+                int baseSpeed = 0;
+                int speed = 0;
+                String manufacturer = "Unknown Manufacturer";
+                String partName = "Unknown RAM";
+                for (int i = 2; i < lines.length; i++) {
+                    final row = lines[i].trimLeft();
+                    var idx = row.indexOf(":");
+                    if (idx != -1) {
+                        final key = row.substring(0, idx);
+                        final val = row.substring(idx + 1).trimLeft();
+                        if (key == "Size") {
+                            size = parseByteAmountString(val);
+                        } else if (key == "Type") {
+                            type = val;
+                        } else if (key == "Speed") {
+                            baseSpeed = int.parse(val.substring(0, val.indexOf(" ")));
+                        } else if (key == "Configured Memory Speed") {
+                            speed = int.parse(val.substring(0, val.indexOf(" ")));
+                        } else if (key == "Manufacturer") {
+                            manufacturer = val.trim();
+                        } else if (key == "Part Number") {
+                            partName = val.trim();
+                        } else if (key == "Form Factor") {
+                            lookupInfo.formFactor =  val.trim();
+                        }
+                    }
+                }
+                
+                lookupInfo.capacity += size;
+                lookupInfo.speed = "${speed} MT/s";
+                
+                ramSticks.add(RAMStickInfo(
+                    size: size,
+                    type: type,
+                    baseSpeed: baseSpeed,
+                    speed: speed,
+                    manufacturer: manufacturer,
+                    partName: partName,
+                ));
+            }
+        });
+
+        lookupInfo.slotsUsed = ramSticks.length;
+
+        if (ramSticks.isNotEmpty) {
+            final stick0 = ramSticks[0];
+            var allSameName = true;
+            for (int i = 1; i < ramSticks.length; i++) {
+                if (
+                    ramSticks[i].manufacturer != ramSticks[i-1].manufacturer ||
+                    ramSticks[i].partName != ramSticks[i-1].partName
+                ) {
+                    allSameName = false;
+                    break;
+                }
+            }
+            var name = "${formatByteAmount(lookupInfo.capacity, 0)} ${stick0.type}-${stick0.speed}";
+            if (allSameName) {
+                lookupInfo.name = "${name} (${stick0.manufacturer} ${stick0.partName})";
+            } else {
+                lookupInfo.name = "${name} (Assorted RAM)";
+            }
+        }
+
+        lookupInfo.utilization = (lookupInfo.size - lookupInfo.available) / lookupInfo.size * 100;
+        lookupInfo.hardwareReserved = lookupInfo.capacity - lookupInfo.size;
 
         return lookupInfo;
     }
 
     Future<void> updateDynamicStats() async {
-        var memInfoFile = File("/proc/meminfo");
-        memInfoFile.readAsStringSync().split("\n").forEach((row) {
+        final memInfoFile = File("/proc/meminfo");
+        final contents = await memInfoFile.readAsString();
+        contents.split("\n").forEach((row) {
             var idx = row.indexOf(":");
             if (idx != -1) {
                 final key = row.substring(0, idx);
@@ -81,6 +187,7 @@ class Memoryinfo extends Hardwareinfo {
         });
 
         this.utilization = (this.size - this.available) / this.size * 100;
+        this.hardwareReserved = this.capacity - this.size;
     }
 
     String toString() {
@@ -89,7 +196,6 @@ class Memoryinfo extends Hardwareinfo {
     speed: ${this.speed},
     capacity: ${this.capacity},
     slotsUsed: ${this.slotsUsed},
-    slotCapacity: ${this.slotCapacity},
     formFactor: ${this.formFactor},
     hardwareReserved: ${this.hardwareReserved},
     size: ${this.size},

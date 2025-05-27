@@ -636,6 +636,28 @@ var cpuDatas = [
 ["B57",2,2,"3.2GHZ","","","1 MB","",80,"",0,""],
 ];
 
+Future<void> iterateProcessFileTrees(CPUInfo that) async {
+    final processesDir = Directory("/proc/");
+    var runningProcessCount = 0;
+    var runningThreadCount = 0;
+    await for (final subdir in processesDir.list()) {
+        final pathStr = subdir.path;
+        if (int.tryParse(pathStr.substring("/proc/".length)) != null) {
+            runningProcessCount++;
+
+            // thread count
+            try {
+                final procDir = Directory("${pathStr}/task");
+                runningThreadCount += procDir.listSync().length;
+            } catch (e) {
+                // process no longer exists
+            }
+        }
+    }
+    that.runningProcessCount = runningProcessCount;
+    that.runningThreadCount = runningThreadCount;
+}
+
 class CPUInfo extends Hardwareinfo {
     // static info
     int coreCount;
@@ -700,21 +722,6 @@ class CPUInfo extends Hardwareinfo {
     }
 
     static Future<CPUInfo> thisDeviceInfo() async {
-        Map<String, String> lscpuInfo = {};
-        Process.runSync("lscpu", []).stdout.split("\n").forEach((String row) {
-            row = row.trimLeft();
-            final colonIdx = row.indexOf(":");
-            if (colonIdx != -1) {
-                final propName = row.substring(0, colonIdx).trimRight();
-                final data = row.substring(colonIdx + 1).trim();
-                lscpuInfo[propName.toLowerCase()] = data;
-            }
-        });
-
-        final name = lscpuInfo["model name"] ?? "Unknown CPU";
-        var idx = name.indexOf("with");
-        if (idx == -1) idx = name.indexOf("w/");
-        final lookupName = name.substring(0, idx == -1 ? name.length : idx).replaceFirst("(OEM Only)", "").trim().toLowerCase();
         CPUInfo lookupInfo = CPUInfo(
             name: "",
             coreCount: 0,
@@ -730,195 +737,203 @@ class CPUInfo extends Hardwareinfo {
             iGPUCoreCount: 0,
             iGPUClock: ""
         );
-        for (final row in cpuDatas) {
-            String cpuName = row[0] as String;
-            if (cpuName.toLowerCase().contains(lookupName)) {
-                lookupInfo = CPUInfo.fromRow(row);
-            }
-        }
         
-        // CPU name
-        lookupInfo.name = name;
-        
-        // core count
-        if (lscpuInfo["core(s) per socket"] != null) {
-            lookupInfo.coreCount = int.parse(lscpuInfo["core(s) per socket"]!);
-        }
+        final promise0 = Process.run("lscpu", []).then((res) {
+            Map<String, String> lscpuInfo = {};
 
-        // thread count
-        if (lscpuInfo["cpu(s)"] != null) {
-            lookupInfo.threadCount = int.parse(lscpuInfo["cpu(s)"]!);
-        }
-        
-        // no reliable way to get base clock
-        // so simple use base clock from the lookup table
+            res.stdout.split("\n").forEach((String row) {
+                row = row.trimLeft();
+                final colonIdx = row.indexOf(":");
+                if (colonIdx != -1) {
+                    final propName = row.substring(0, colonIdx).trimRight();
+                    final data = row.substring(colonIdx + 1).trim();
+                    lscpuInfo[propName.toLowerCase()] = data;
+                }
+            });
 
-        // boost clock
-        if (lscpuInfo["cpu max MHz"] != null) {
-            var boostClock = double.parse(lscpuInfo["cpu max MHz"]!);
-            if (boostClock >= 1000) {
-                lookupInfo.boostClock = noZeroesToFixed(boostClock / 1000) + " Ghz";
-            } else {
-                lookupInfo.boostClock = noZeroesToFixed(boostClock) + " Mhz";
+            final name = lscpuInfo["model name"] ?? "Unknown CPU";
+            var idx = name.indexOf("with");
+            if (idx == -1) idx = name.indexOf("w/");
+            final lookupName = name.substring(0, idx == -1 ? name.length : idx).replaceFirst("(OEM Only)", "").trim().toLowerCase();
+            for (final row in cpuDatas) {
+                String cpuName = row[0] as String;
+                if (cpuName.toLowerCase().contains(lookupName)) {
+                    lookupInfo = CPUInfo.fromRow(row);
+                }
             }
-        }
+            
+            // CPU name
+            lookupInfo.name = name;
+            
+            // core count
+            if (lscpuInfo["core(s) per socket"] != null) {
+                lookupInfo.coreCount = int.parse(lscpuInfo["core(s) per socket"]!);
+            }
 
-        // L3 cache
-        if (lscpuInfo["l3 cache"] != null) {
-            final data = lscpuInfo["l3 cache"]!;
-            lookupInfo.l3Cache = parseByteAmountString(data);
-            if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l3CacheParenText = "per core";
-            } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l3CacheParenText = "per thread";
-            } else if (data.contains("1 instance")) {
-                lookupInfo.l3CacheParenText = "shared";
+            // thread count
+            if (lscpuInfo["cpu(s)"] != null) {
+                lookupInfo.threadCount = int.parse(lscpuInfo["cpu(s)"]!);
             }
-        }
-        
-        // L2 cache
-        if (lscpuInfo["l2 cache"] != null) {
-            final data = lscpuInfo["l2 cache"]!;
-            lookupInfo.l2Cache = parseByteAmountString(data);
-            if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l2CacheParenText = "per core";
-            } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l2CacheParenText = "per thread";
-            } else if (data.contains("1 instance")) {
-                lookupInfo.l2CacheParenText = "shared";
-            }
-        }
-        
-        // L1 Cache
-        if (lscpuInfo["l1d cache"] != null) {
-            final data = lscpuInfo["l1d cache"]!;
-            if (data.contains("${lookupInfo.coreCount} instance")) {
-                lookupInfo.l1CacheParenText = "per core";
-            } else if (data.contains("${lookupInfo.threadCount} instance")) {
-                lookupInfo.l1CacheParenText = "per thread";
-            } else if (data.contains("1 instance")) {
-                lookupInfo.l1CacheParenText = "shared";
-            }
-            final dSz = parseByteAmountString(lscpuInfo["l1d cache"]!);
-            final iSz = parseByteAmountString(lscpuInfo["l1i cache"]!);
-            lookupInfo.l1Cache = dSz + iSz;
-        }
+            
+            // no reliable way to get base clock
+            // so simple use base clock from the lookup table
 
-        // Virtualization Enabled
-        if (lscpuInfo["flags"] != null) {
-            if (lscpuInfo["flags"]!.contains("vmx") || lscpuInfo["flags"]!.contains("svm")) {
-                lookupInfo.virtualization = true;
+            // boost clock
+            if (lscpuInfo["cpu max MHz"] != null) {
+                var boostClock = double.parse(lscpuInfo["cpu max MHz"]!);
+                if (boostClock >= 1000) {
+                    lookupInfo.boostClock = noZeroesToFixed(boostClock / 1000) + " Ghz";
+                } else {
+                    lookupInfo.boostClock = noZeroesToFixed(boostClock) + " Mhz";
+                }
             }
-        }
 
-        lookupInfo.updateDynamicStats();
+            // L3 cache
+            if (lscpuInfo["l3 cache"] != null) {
+                final data = lscpuInfo["l3 cache"]!;
+                lookupInfo.l3Cache = parseByteAmountString(data);
+                if (data.contains("${lookupInfo.coreCount} instance")) {
+                    lookupInfo.l3CacheParenText = "per core";
+                } else if (data.contains("${lookupInfo.threadCount} instance")) {
+                    lookupInfo.l3CacheParenText = "per thread";
+                } else if (data.contains("1 instance")) {
+                    lookupInfo.l3CacheParenText = "shared";
+                }
+            }
+            
+            // L2 cache
+            if (lscpuInfo["l2 cache"] != null) {
+                final data = lscpuInfo["l2 cache"]!;
+                lookupInfo.l2Cache = parseByteAmountString(data);
+                if (data.contains("${lookupInfo.coreCount} instance")) {
+                    lookupInfo.l2CacheParenText = "per core";
+                } else if (data.contains("${lookupInfo.threadCount} instance")) {
+                    lookupInfo.l2CacheParenText = "per thread";
+                } else if (data.contains("1 instance")) {
+                    lookupInfo.l2CacheParenText = "shared";
+                }
+            }
+            
+            // L1 Cache
+            if (lscpuInfo["l1d cache"] != null) {
+                final data = lscpuInfo["l1d cache"]!;
+                if (data.contains("${lookupInfo.coreCount} instance")) {
+                    lookupInfo.l1CacheParenText = "per core";
+                } else if (data.contains("${lookupInfo.threadCount} instance")) {
+                    lookupInfo.l1CacheParenText = "per thread";
+                } else if (data.contains("1 instance")) {
+                    lookupInfo.l1CacheParenText = "shared";
+                }
+                final dSz = parseByteAmountString(lscpuInfo["l1d cache"]!);
+                final iSz = parseByteAmountString(lscpuInfo["l1i cache"]!);
+                lookupInfo.l1Cache = dSz + iSz;
+            }
+
+            // Virtualization Enabled
+            if (lscpuInfo["flags"] != null) {
+                if (lscpuInfo["flags"]!.contains("vmx") || lscpuInfo["flags"]!.contains("svm")) {
+                    lookupInfo.virtualization = true;
+                }
+            }
+        });
+
+        final promise1 = lookupInfo.updateDynamicStats();
+
+        await Future.wait([promise0, promise1]);
 
         return lookupInfo;
     }
 
     Future<void> updateDynamicStats() async {
         // update clock speed
-        final cpuinfoFile = File("/proc/cpuinfo");
-        final logicalCoreInfoStrings = (await cpuinfoFile.readAsString()).trimRight().split("\n\n");
-        this.avgClockSpeed = 0.0;
-        this.maxClockSpeed = 0.0;
-        logicalCoreInfoStrings.forEach((logicalCoreInfo) {
-            logicalCoreInfo.split("\n").forEach((propStr) {
-                final colonIdx = propStr.indexOf(":");
-                final propName = propStr.substring(0, colonIdx).trimRight();
-                if (propName == "cpu MHz") {
-                    final speed = double.parse(propStr.substring(colonIdx + 2));
-                    if (speed > this.maxClockSpeed) {
-                        this.maxClockSpeed = speed;
+        final promise0 = File("/proc/cpuinfo").readAsString().then((str) {
+            final logicalCoreInfoStrings = str.trimRight().split("\n\n");
+            this.avgClockSpeed = 0.0;
+            this.maxClockSpeed = 0.0;
+            logicalCoreInfoStrings.forEach((logicalCoreInfo) {
+                logicalCoreInfo.split("\n").forEach((propStr) {
+                    final colonIdx = propStr.indexOf(":");
+                    final propName = propStr.substring(0, colonIdx).trimRight();
+                    if (propName == "cpu MHz") {
+                        final speed = double.parse(propStr.substring(colonIdx + 2));
+                        if (speed > this.maxClockSpeed) {
+                            this.maxClockSpeed = speed;
+                        }
+                        this.avgClockSpeed += speed;
                     }
-                    this.avgClockSpeed += speed;
-                }
+                });
             });
+            this.avgClockSpeed /= logicalCoreInfoStrings.length;
         });
-        this.avgClockSpeed /= logicalCoreInfoStrings.length;
 
         // update utilization
         // https://www.linuxhowtos.org/System/procstat.htm
-        final statFile = File("/proc/stat");
-        final lines = statFile.readAsStringSync().split('\n');
+        final promise1 = File("/proc/stat").readAsString().then((str) {
+            final lines = str.split('\n');
 
-        final cpuValues = lines[0].trimRight().split(" ");
-        cpuValues.removeAt(0); // Remove the 'cpu' prefix
-        List<int> currentCpuTimes = [];
-        cpuValues.forEach((str) {
-            if (str.isNotEmpty) {
-                currentCpuTimes.add(int.parse(str));
+            final cpuValues = lines[0].trimRight().split(" ");
+            cpuValues.removeAt(0); // Remove the 'cpu' prefix
+            List<int> currentCpuTimes = [];
+            cpuValues.forEach((str) {
+                if (str.isNotEmpty) {
+                    currentCpuTimes.add(int.parse(str));
+                }
+            });
+
+            // total CPU time
+            var currentTotal = 0;
+            for (final value in currentCpuTimes) {
+                currentTotal += value;
+            }
+
+            // idle CPU time
+            final currentIdle = currentCpuTimes[3];
+
+            if (_prevTotal == 0) {
+                // First run, just store values for the next iteration
+                _prevTotal = currentTotal;
+                _prevIdle = currentIdle;
+            } else {
+                final diffIdle = currentIdle - _prevIdle;
+                final diffTotal = currentTotal - _prevTotal;
+
+                // Avoid division by zero if total hasn't changed (e.g., very fast checks or halted system)
+                if (diffTotal > 0) {
+                    this.utilization = ((diffTotal - diffIdle) / diffTotal) * 100;
+                } else {
+                    this.utilization = 0.0;
+                }
+
+                _prevTotal = currentTotal;
+                _prevIdle = currentIdle;
             }
         });
 
-        // total CPU time
-        var currentTotal = 0;
-        for (final value in currentCpuTimes) {
-            currentTotal += value;
-        }
-
-        // idle CPU time
-        final currentIdle = currentCpuTimes[3];
-
-        if (_prevTotal == 0) {
-            // First run, just store values for the next iteration
-            _prevTotal = currentTotal;
-            _prevIdle = currentIdle;
-        } else {
-            final diffIdle = currentIdle - _prevIdle;
-            final diffTotal = currentTotal - _prevTotal;
-
-            // Avoid division by zero if total hasn't changed (e.g., very fast checks or halted system)
-            if (diffTotal > 0) {
-                this.utilization = ((diffTotal - diffIdle) / diffTotal) * 100;
-            } else {
-                this.utilization = 0.0;
-            }
-
-            _prevTotal = currentTotal;
-            _prevIdle = currentIdle;
-        }
-
         // update utilization
-        final uptimeFile = File("/proc/uptime");
-        this.uptime = double.parse(uptimeFile.readAsStringSync().split(' ')[0]);
-
+        final promise2 = File("/proc/uptime").readAsString().then((str) {
+            this.uptime = double.parse(str.split(' ')[0]);
+        });
+        
         // process count
-        final processesDir = Directory("/proc/");
-        final subdirs = processesDir.listSync();
-        var runningProcessCount = 0;
-        var runningThreadCount = 0;
-        for (final subdir in subdirs) {
-            final pathStr = subdir.path;
-            if (int.tryParse(pathStr.substring("/proc/".length)) != null) {
-                runningProcessCount++;
-
-                // thread count
-                try {
-                    final procDir = Directory("${pathStr}/task");
-                    runningThreadCount += procDir.listSync().length;
-                } catch (e) {
-                    // process no longer exists
-                }
-            }
-        }
-        this.runningProcessCount = runningProcessCount;
-        this.runningThreadCount = runningThreadCount;
+        final promise3 = iterateProcessFileTrees(this);
         
         // handles count
-        final handlesResStr = Process.runSync("sysctl", ["fs.file-nr"]).stdout.toString();
-        var idx = handlesResStr.indexOf("=");
-        // find number
-        while (true) {
-            if (isNumber(handlesResStr.codeUnitAt(idx))) {
-                break;
+        final promise4 = Process.run("sysctl", ["fs.file-nr"]).then((res) {
+            final handlesResStr = res.stdout.toString();
+            var idx = handlesResStr.indexOf("=");
+            // find number
+            while (true) {
+                if (isNumber(handlesResStr.codeUnitAt(idx))) {
+                    break;
+                }
+                idx++;
             }
-            idx++;
-        }
-        final handlesStartIdx = idx;
-        idx = handlesResStr.indexOf("\t", idx);
-        this.handlesCount = int.parse(handlesResStr.substring(handlesStartIdx, idx));
+            final handlesStartIdx = idx;
+            idx = handlesResStr.indexOf("\t", idx);
+            this.handlesCount = int.parse(handlesResStr.substring(handlesStartIdx, idx));
+        });
 
+        await Future.wait([promise0, promise1, promise2, promise3, promise4]);
     }
 
     String toString() {

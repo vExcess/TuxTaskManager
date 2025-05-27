@@ -23,6 +23,8 @@ int parseByteAmountString(String str) {
             multiplier = 1024;
         } else if (scaler.startsWith("MB")) {
             multiplier = 1024 * 1024;
+        } else if (scaler.startsWith("GB")) {
+            multiplier = 1024 * 1024 * 1024;
         } else if (scaler.startsWith("KiB")) {
             multiplier = 1024;
         } else if (scaler.startsWith("MiB")) {

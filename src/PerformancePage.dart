@@ -1,3 +1,5 @@
+import 'dart:math' as Math;
+
 import 'package:drawlite/drawlite.dart'
     show Color, Drawlite, Event, KeyboardEvent, MouseEvent, QuitEvent, DLImage;
 import 'package:drawlite/dl.dart';
@@ -11,6 +13,9 @@ class PerformancePage {
 
     String subtitle = "";
     String Function(PerformancePage) calcSubtitle;
+
+    String graphRightLabel = "";
+    String Function(PerformancePage) calcGraphRightLabel;
 
     List<List<String>> statLabels;
     List<List<String>> statValues = [];
@@ -32,7 +37,8 @@ class PerformancePage {
         required this.statLabels,
         required this.calcStatValues,
         required this.sideStatLabels,
-        required this.calcSideStatValues
+        required this.calcSideStatValues,
+        required this.calcGraphRightLabel,
     }) {
         this.graphData = List.filled(60, 0);
     }
@@ -74,10 +80,10 @@ class PerformancePage {
         textAlign(LEFT, BOTTOM);
         text("% Utilization over 60 seconds", leftEdge, 107);
         textAlign(RIGHT, BOTTOM);
-        text("100%", rightEdge, 107);
+        text(this.graphRightLabel, rightEdge, 107);
 
         final baseHeight = height - 12;
-        final sideStatsY = baseHeight - 28 - (this.statLabels.length - 1) * 62;
+        final sideStatsY = baseHeight - Math.max((this.statLabels.length - 1) * 56 + 24, (this.sideStatLabels.length - 1) * 22);
 
         drawGraph(leftEdge, 110, pageWidth, (sideStatsY - 110 - 27).toInt(), this.color, this.graphData, true);        
 
@@ -87,34 +93,54 @@ class PerformancePage {
         textAlign(LEFT, BOTTOM);
         for (int y = 0; y < this.statLabels.length; y++) {
             for (int x = 0; x < this.statLabels[y].length; x++) {
-                text(this.statLabels[y][x], leftEdge + x * 100, baseHeight - 28 - (this.statLabels.length - y - 1) * 62);
+                text(this.statLabels[y][x], leftEdge + x * 100, sideStatsY + y * 56);
             }
         }
 
         // stat values
-        textSize(22);
+        textSize(20);
         fill(0);
         textAlign(LEFT, BOTTOM);
         for (int y = 0; y < this.statValues.length; y++) {
             for (int x = 0; x < this.statValues[y].length; x++) {
-                text(this.statValues[y][x], leftEdge + x * 100, baseHeight - (this.statLabels.length - y - 1) * 62);
+                text(this.statValues[y][x], leftEdge + x * 100, sideStatsY + y * 56 + 24);
             }    
         }
 
-        // side stat labels
+        // side stat labels text setup
         textSize(15);
-        fill(112);
         textAlign(LEFT, BOTTOM);
+
+        // offset of the side stat labels
+        var xOff = 0.0;
+        for (final row in this.statLabels) {
+            final w = (row.length - 1) * 100.0 + textWidth(row.last) + 25.0;
+            if (w > xOff) {
+                xOff = w;
+            }
+        }
+
+        // calc width of labels
+        var labelWidth = 0.0;
+        for (final label in this.sideStatLabels) {
+            final w = textWidth(label);
+            if (w > labelWidth) {
+                labelWidth = w;
+            }
+        }
+
+        // display labels
+        fill(112);
         for (int y = 0; y < this.sideStatLabels.length; y++) {
-            text(this.sideStatLabels[y], leftEdge + 300, sideStatsY + y * 22);
+            text(this.sideStatLabels[y], leftEdge + xOff, sideStatsY + y * 22);
         }
 
         // side stat values
         textSize(15);
-        fill(0);
         textAlign(LEFT, BOTTOM);
+        fill(0);
         for (int y = 0; y < this.sideStatValues.length; y++) {
-            text(this.sideStatValues[y], leftEdge + 450, sideStatsY + y * 22);
+            text(this.sideStatValues[y], leftEdge + xOff + labelWidth + 12, sideStatsY + y * 22);
         }
     }
 
@@ -130,5 +156,6 @@ class PerformancePage {
         this.subtitle = this.calcSubtitle(this);
         this.statValues = this.calcStatValues(this);
         this.sideStatValues = this.calcSideStatValues(this);
+        this.graphRightLabel = this.calcGraphRightLabel(this);
     }
 }

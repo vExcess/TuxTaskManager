@@ -57,6 +57,9 @@ Future<List<PerformancePage>> createPerformancePages() async {
                     "${formatByteAmount(info.l2Cache, 0)} ${l2Txt.isNotEmpty ? "(${l2Txt})" : ""}",
                     "${formatByteAmount(info.l3Cache, 0)} ${l3Txt.isNotEmpty ? "(${l3Txt})" : ""}",
                 ];
+            },
+            calcGraphRightLabel: (PerformancePage that) {
+                return "100%";
             }
         ),
 
@@ -68,20 +71,23 @@ Future<List<PerformancePage>> createPerformancePages() async {
             calcSubtitle: (PerformancePage that) {
                 final info = that.info as Memoryinfo;
                 final used = info.size - info.available;
-                return "${formatByteAmount(used).split(" ")[0]}/${formatByteAmount(info.size)} (${(info.utilization).round()}%)";
+                final swapUsed = info.swapSize - info.swapAvailable;
+                final swapUtilization = (swapUsed / info.swapSize) * 100;
+                return "${formatByteAmount(used).split(" ")[0]}/${formatByteAmount(info.size)} (${(info.utilization).round()}%)\n${formatByteAmount(swapUsed).split(" ")[0]}/${formatByteAmount(info.swapSize)} (${(swapUtilization).round()}%)";
             },
             statLabels: [
                 ["In use", "Available"],
+                ["Swap used", "Swap Available"],
                 ["Committed", "Cached"],
-                // ["Uptime"],
             ],
             calcStatValues: (PerformancePage that) {
                 final info = that.info as Memoryinfo;
                 final used = info.size - info.available;
+                final swapUsed = info.swapSize - info.swapAvailable;
                 return [
                     ["${formatByteAmount(used)}", "${formatByteAmount(info.available)}"],
+                    ["${formatByteAmount(swapUsed)}", "${formatByteAmount(info.swapAvailable)}"],
                     ["${formatByteAmount(info.committed)}", "${formatByteAmount(info.cached)}"],
-                    // ["${days}:${hours}:${minutes}:${seconds}"],
                 ];
             },
             sideStatLabels: [
@@ -95,9 +101,13 @@ Future<List<PerformancePage>> createPerformancePages() async {
                 return [
                     info.speed,
                     info.slotsUsed.toString(),
-                    info.slotCapacity.toString(),
-                    info.hardwareReserved.toString()
+                    info.formFactor.toString(),
+                    info.hardwareReserved > 0 ? formatByteAmount(info.hardwareReserved) : "Unknown"
                 ];
+            },
+            calcGraphRightLabel: (PerformancePage that) {
+                final info = that.info as Memoryinfo;
+                return formatByteAmount(info.size);
             }
         )
     ];
