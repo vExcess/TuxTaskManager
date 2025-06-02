@@ -1,5 +1,6 @@
 import 'dart:math' as Math;
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dcanvas/dcanvas.dart';
 import 'package:dcanvas/backend/Window.dart';
@@ -25,7 +26,7 @@ late int rheight;
 late double width;
 late double height;
 
-void drawGraph(int x, int y, int w, int h, Color clr, List<double> data, bool grid) {
+void drawGraph(int x, int y, int w, int h, List<Color> colors, List<List<double>> graphDatas, bool grid) {
     // draw box
     noStroke();
     fill(255);
@@ -33,7 +34,7 @@ void drawGraph(int x, int y, int w, int h, Color clr, List<double> data, bool gr
 
     // draw grid
     if (grid) {
-        stroke(lerpColor(clr, color(255), 0.85));
+        stroke(lerpColor(colors[0], color(255), 0.85));
         double lineDist = h / 10;
         var drawEndY = 0.5 + y + h;
         for (int i = 1; i < 10; i++) {
@@ -44,21 +45,25 @@ void drawGraph(int x, int y, int w, int h, Color clr, List<double> data, bool gr
         }
     }
 
-    // draw data
-    stroke(clr);
-    fill(clr.r, clr.g, clr.b, 100);
-    beginShape();
-    vertex(0.5 + x, y + h);
-    double lineDist = w / 59;
-    for (int i = 0; i < data.length; i++) {
-        vertex(0.5 + x + i*lineDist, 0.5 + y + h - data[i] * (h - 1));
+    // draw datas
+    for (int i = graphDatas.length - 1; i >= 0; i--) {
+        final clr = colors[i];
+        final data = graphDatas[i];
+        stroke(clr);
+        fill(clr.r, clr.g, clr.b, 100);
+        beginShape();
+        vertex(0.5 + x, y + h);
+        double lineDist = w / 59;
+        for (int i = 0; i < data.length; i++) {
+            vertex(0.5 + x + i*lineDist, 0.5 + y + h - data[i] * (h - 1));
+        }
+        // vertex(0.5 + x + w, y + h - data.last * h + 0.5);
+        vertex(0.5 + x + w, y + h);
+        endShape();
     }
-    // vertex(0.5 + x + w, y + h - data.last * h + 0.5);
-    vertex(0.5 + x + w, y + h);
-    endShape();
 
     // draw border
-    stroke(clr);
+    stroke(colors[0]);
     noFill();
     rect(x, y, w, h);
 }
@@ -268,6 +273,16 @@ Future<void> main() async {
     height = rheight / appScale;
 
     performancePages = await createPerformancePages();
+
+    var cacheFile = File("/home/${Platform.environment['USER']}/.tuxtaskmanager/info-cache.txt");
+    cacheFile.exists().then((exists) {
+        if (!exists) {
+            cacheFile.createSync(
+                recursive: true
+            );
+        }
+        cacheFile.writeAsString(performancePages[1].info.toString());
+    });
 
     Timer.periodic(Duration(seconds: 1), (_) {
         for (final page in performancePages) {

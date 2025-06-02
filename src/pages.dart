@@ -1,18 +1,44 @@
+import 'dart:io';
+
 import 'package:drawlite/dl.dart';
 
 import 'PerformancePage.dart';
 import 'systeminfo/systeminfo.dart';
 
 Future<List<PerformancePage>> createPerformancePages() async {
+    var cacheFile = File("/home/${Platform.environment['USER']}/.tuxtaskmanager/info-cache.txt");
+    Map<String, String> cachedInfo = {};
+    if (cacheFile.existsSync()) {
+        var str = cacheFile.readAsStringSync();
+        str.substring(str.indexOf("{") + 1, str.indexOf("}")).trim().split("\n").forEach((line) {
+            line = line.trim();
+            final idx = line.indexOf(":");
+            final key = line.substring(0, idx);
+            final val = line.substring(idx + 1).trimLeft();
+            cachedInfo[key] = val.substring(0, val.length-1); // remove comma
+        });
+
+        // don't used cached info if it's default values
+        if (cachedInfo["capacity"] == "0") {
+            cachedInfo = {};
+        }
+    }
+
+    final (res1, res2, res3) = await (
+        CPUInfo.thisDeviceInfo(),
+        MemoryInfo.thisDeviceInfo(cachedInfo),
+        DriveInfo.thisDeviceInfo()
+    ).wait;
+
     return [
         // CPU Page
         PerformancePage(
-            color: color(17, 125, 187),
+            colors: [color(17, 125, 187)],
             title: "CPU",
-            info: await CPUInfo.thisDeviceInfo(),
+            info: res1,
             calcSubtitle: (PerformancePage that) {
                 final info = that.info as CPUInfo;
-                return "${info.utilization.toInt()}% ${(info.avgClockSpeed / 1000.0).toStringAsFixed(2)} GHz";
+                return "${info.utilization[0].toInt()}% ${(info.avgClockSpeed / 1000.0).toStringAsFixed(2)} GHz";
             },
             statLabels: [
                 ["Utilization", "Speed (Avg/Top)"],
@@ -27,7 +53,7 @@ Future<List<PerformancePage>> createPerformancePages() async {
                 final minutes = ((up / 60) % 60).toInt().toString().padLeft(2, "0");
                 final seconds = ((up % 60)).toInt().toString().padLeft(2, "0");
                 return [
-                    ["${info.utilization.toInt()}%", "${(info.avgClockSpeed / 1000.0).toStringAsFixed(2)} / ${(info.maxClockSpeed / 1000.0).toStringAsFixed(2)} GHz"],
+                    ["${info.utilization[0].toInt()}%", "${(info.avgClockSpeed / 1000.0).toStringAsFixed(2)} / ${(info.maxClockSpeed / 1000.0).toStringAsFixed(2)} GHz"],
                     ["${info.runningProcessCount}", "${info.runningThreadCount}", "${info.handlesCount}"],
                     ["${days}:${hours}:${minutes}:${seconds}"],
                 ];
@@ -65,15 +91,15 @@ Future<List<PerformancePage>> createPerformancePages() async {
 
         // Memory Page
         PerformancePage(
-            color: color(139, 18, 174),
+            graphsDatasLen: 2,
+            colors: [color(139, 18, 174), color(246, 97, 81)],
             title: "Memory",
-            info: await Memoryinfo.thisDeviceInfo(),
+            info: res2,
             calcSubtitle: (PerformancePage that) {
-                final info = that.info as Memoryinfo;
+                final info = that.info as MemoryInfo;
                 final used = info.size - info.available;
                 final swapUsed = info.swapSize - info.swapAvailable;
-                final swapUtilization = (swapUsed / info.swapSize) * 100;
-                return "${formatByteAmount(used).split(" ")[0]}/${formatByteAmount(info.size)} (${(info.utilization).round()}%)\n${formatByteAmount(swapUsed).split(" ")[0]}/${formatByteAmount(info.swapSize)} (${(swapUtilization).round()}%)";
+                return "${formatByteAmount(used).split(" ")[0]}/${formatByteAmount(info.size)} (${info.utilization[0].round()}%)\n${formatByteAmount(swapUsed).split(" ")[0]}/${formatByteAmount(info.swapSize)} (${info.utilization[1].round()}%)";
             },
             statLabels: [
                 ["In use", "Available"],
@@ -81,7 +107,7 @@ Future<List<PerformancePage>> createPerformancePages() async {
                 ["Committed", "Cached"],
             ],
             calcStatValues: (PerformancePage that) {
-                final info = that.info as Memoryinfo;
+                final info = that.info as MemoryInfo;
                 final used = info.size - info.available;
                 final swapUsed = info.swapSize - info.swapAvailable;
                 return [
@@ -97,7 +123,7 @@ Future<List<PerformancePage>> createPerformancePages() async {
                 "Hardware reserved:",
             ],
             calcSideStatValues: (PerformancePage that) {
-                final info = that.info as Memoryinfo;
+                final info = that.info as MemoryInfo;
                 return [
                     info.speed,
                     info.slotsUsed.toString(),
@@ -106,9 +132,10 @@ Future<List<PerformancePage>> createPerformancePages() async {
                 ];
             },
             calcGraphRightLabel: (PerformancePage that) {
-                final info = that.info as Memoryinfo;
-                return formatByteAmount(info.size);
+                return "100%";
             }
-        )
+        ),
+
+        
     ];
 }

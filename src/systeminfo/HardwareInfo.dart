@@ -1,6 +1,6 @@
 class Hardwareinfo {
     String name;
-    double utilization = 0;
+    List<double> utilization = [0];
 
     Hardwareinfo({
         required this.name

@@ -839,7 +839,7 @@ class CPUInfo extends Hardwareinfo {
 
         final promise1 = lookupInfo.updateDynamicStats();
 
-        await Future.wait([promise0, promise1]);
+        await (promise0, promise1).wait;
 
         return lookupInfo;
     }
@@ -899,9 +899,9 @@ class CPUInfo extends Hardwareinfo {
 
                 // Avoid division by zero if total hasn't changed (e.g., very fast checks or halted system)
                 if (diffTotal > 0) {
-                    this.utilization = ((diffTotal - diffIdle) / diffTotal) * 100;
+                    this.utilization[0] = ((diffTotal - diffIdle) / diffTotal) * 100;
                 } else {
-                    this.utilization = 0.0;
+                    this.utilization[0] = 0.0;
                 }
 
                 _prevTotal = currentTotal;
@@ -933,11 +933,11 @@ class CPUInfo extends Hardwareinfo {
             this.handlesCount = int.parse(handlesResStr.substring(handlesStartIdx, idx));
         });
 
-        await Future.wait([promise0, promise1, promise2, promise3, promise4]);
+        await (promise0, promise1, promise2, promise3, promise4).wait;
     }
 
     String toString() {
-        return """CPUInfo(
+        return """CPUInfo{
     name: ${this.name},
     coreCount: ${this.coreCount},
     threadCount: ${this.threadCount},
@@ -950,6 +950,6 @@ class CPUInfo extends Hardwareinfo {
     iGPUName: ${this.iGPUName},
     iGPUCoreCount: ${this.iGPUCoreCount},
     iGPUClock: ${this.iGPUClock},
-)""";
+}""";
     }
 }

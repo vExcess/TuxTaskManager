@@ -33,7 +33,7 @@ class RAMStickInfo {
     }
 }
 
-class Memoryinfo extends Hardwareinfo {
+class MemoryInfo extends Hardwareinfo {
     // static info
     String speed;
     int capacity;
@@ -49,7 +49,7 @@ class Memoryinfo extends Hardwareinfo {
     int committed;
     int cached;
 
-    Memoryinfo({
+    MemoryInfo({
         required super.name,
         required this.speed,
         required this.capacity,
@@ -62,16 +62,19 @@ class Memoryinfo extends Hardwareinfo {
         required this.swapAvailable,
         required this.committed,
         required this.cached,
-    });
+    }) {
+        // main, swap
+        this.utilization = [0.0, 0.0];
+    }
 
-    static Future<Memoryinfo> thisDeviceInfo() async {
-        Memoryinfo lookupInfo = Memoryinfo(
-            name: "Unknown RAM",
-            speed: "Unknown",
-            capacity: 0,
-            slotsUsed: 0,
-            formFactor: "Unknown",
-            hardwareReserved: 0,
+    static Future<MemoryInfo> thisDeviceInfo(Map<String, String> cachedInfo) async {
+        MemoryInfo lookupInfo = MemoryInfo(
+            name: cachedInfo["name"] ?? "Unknown RAM",
+            speed: cachedInfo["speed"] ?? "Unknown",
+            capacity: int.parse(cachedInfo["capacity"] ?? "0"),
+            slotsUsed: int.parse(cachedInfo["slotsUsed"] ?? "0"),
+            formFactor: cachedInfo["formFactor"] ?? "Unknown",
+            hardwareReserved: int.parse(cachedInfo["hardwareReserved"] ?? "0"),
             size: 0,
             swapSize: 0,
             available: 0,
@@ -80,84 +83,82 @@ class Memoryinfo extends Hardwareinfo {
             cached: 0,
         );
 
-        List<dynamic> resultsAll = await Future.wait([
-            Process.run("pkexec", ["dmidecode", "--type", "17"]),
-            lookupInfo.updateDynamicStats()
-        ]);
-        
-        final res = resultsAll[0];
-        List<RAMStickInfo> ramSticks = [];
-        res.stdout.split("\n\n").forEach((String str) {
-            final lines = str.trim().split("\n");
-            if (lines.length >= 2 && lines[1] == "Memory Device") {
-                int size = 0;
-                String type = "DDR";
-                int baseSpeed = 0;
-                int speed = 0;
-                String manufacturer = "Unknown Manufacturer";
-                String partName = "Unknown RAM";
-                for (int i = 2; i < lines.length; i++) {
-                    final row = lines[i].trimLeft();
-                    var idx = row.indexOf(":");
-                    if (idx != -1) {
-                        final key = row.substring(0, idx);
-                        final val = row.substring(idx + 1).trimLeft();
-                        if (key == "Size") {
-                            size = parseByteAmountString(val);
-                        } else if (key == "Type") {
-                            type = val;
-                        } else if (key == "Speed") {
-                            baseSpeed = int.parse(val.substring(0, val.indexOf(" ")));
-                        } else if (key == "Configured Memory Speed") {
-                            speed = int.parse(val.substring(0, val.indexOf(" ")));
-                        } else if (key == "Manufacturer") {
-                            manufacturer = val.trim();
-                        } else if (key == "Part Number") {
-                            partName = val.trim();
-                        } else if (key == "Form Factor") {
-                            lookupInfo.formFactor =  val.trim();
+        if (cachedInfo.isEmpty) {
+            final res = await Process.run("pkexec", ["dmidecode", "--type", "17"]);
+            if (!res.stderr.startsWith("Error")) {
+                List<RAMStickInfo> ramSticks = [];
+                res.stdout.split("\n\n").forEach((String str) {
+                    final lines = str.trim().split("\n");
+                    if (lines.length >= 2 && lines[1] == "Memory Device") {
+                        int size = 0;
+                        String type = "DDR";
+                        int baseSpeed = 0;
+                        int speed = 0;
+                        String manufacturer = "Unknown Manufacturer";
+                        String partName = "Unknown RAM";
+                        for (int i = 2; i < lines.length; i++) {
+                            final row = lines[i].trimLeft();
+                            var idx = row.indexOf(":");
+                            if (idx != -1) {
+                                final key = row.substring(0, idx);
+                                final val = row.substring(idx + 1).trimLeft();
+                                if (key == "Size") {
+                                    size = parseByteAmountString(val);
+                                } else if (key == "Type") {
+                                    type = val;
+                                } else if (key == "Speed") {
+                                    baseSpeed = int.parse(val.substring(0, val.indexOf(" ")));
+                                } else if (key == "Configured Memory Speed") {
+                                    speed = int.parse(val.substring(0, val.indexOf(" ")));
+                                } else if (key == "Manufacturer") {
+                                    manufacturer = val.trim();
+                                } else if (key == "Part Number") {
+                                    partName = val.trim();
+                                } else if (key == "Form Factor") {
+                                    lookupInfo.formFactor =  val.trim();
+                                }
+                            }
+                        }
+                        
+                        lookupInfo.capacity += size;
+                        lookupInfo.speed = "${speed} MT/s";
+                        
+                        ramSticks.add(RAMStickInfo(
+                            size: size,
+                            type: type,
+                            baseSpeed: baseSpeed,
+                            speed: speed,
+                            manufacturer: manufacturer,
+                            partName: partName,
+                        ));
+                    }
+                });
+
+                lookupInfo.slotsUsed = ramSticks.length;
+
+                if (ramSticks.isNotEmpty) {
+                    final stick0 = ramSticks[0];
+                    var allSameName = true;
+                    for (int i = 1; i < ramSticks.length; i++) {
+                        if (
+                            ramSticks[i].manufacturer != ramSticks[i-1].manufacturer ||
+                            ramSticks[i].partName != ramSticks[i-1].partName
+                        ) {
+                            allSameName = false;
+                            break;
                         }
                     }
+                    var name = "${formatByteAmount(lookupInfo.capacity, 0)} ${stick0.type}-${stick0.speed}";
+                    if (allSameName) {
+                        lookupInfo.name = "${name} (${stick0.manufacturer} ${stick0.partName})";
+                    } else {
+                        lookupInfo.name = "${name} (Assorted RAM)";
+                    }
                 }
-                
-                lookupInfo.capacity += size;
-                lookupInfo.speed = "${speed} MT/s";
-                
-                ramSticks.add(RAMStickInfo(
-                    size: size,
-                    type: type,
-                    baseSpeed: baseSpeed,
-                    speed: speed,
-                    manufacturer: manufacturer,
-                    partName: partName,
-                ));
-            }
-        });
-
-        lookupInfo.slotsUsed = ramSticks.length;
-
-        if (ramSticks.isNotEmpty) {
-            final stick0 = ramSticks[0];
-            var allSameName = true;
-            for (int i = 1; i < ramSticks.length; i++) {
-                if (
-                    ramSticks[i].manufacturer != ramSticks[i-1].manufacturer ||
-                    ramSticks[i].partName != ramSticks[i-1].partName
-                ) {
-                    allSameName = false;
-                    break;
-                }
-            }
-            var name = "${formatByteAmount(lookupInfo.capacity, 0)} ${stick0.type}-${stick0.speed}";
-            if (allSameName) {
-                lookupInfo.name = "${name} (${stick0.manufacturer} ${stick0.partName})";
-            } else {
-                lookupInfo.name = "${name} (Assorted RAM)";
             }
         }
 
-        lookupInfo.utilization = (lookupInfo.size - lookupInfo.available) / lookupInfo.size * 100;
-        lookupInfo.hardwareReserved = lookupInfo.capacity - lookupInfo.size;
+        await lookupInfo.updateDynamicStats();
 
         return lookupInfo;
     }
@@ -186,12 +187,13 @@ class Memoryinfo extends Hardwareinfo {
             }
         });
 
-        this.utilization = (this.size - this.available) / this.size * 100;
+        this.utilization[0] = (this.size - this.available) / this.size * 100;
+        this.utilization[1] = (this.swapSize - this.swapAvailable) / this.swapSize * 100;
         this.hardwareReserved = this.capacity - this.size;
     }
 
     String toString() {
-        return """Memoryinfo(
+        return """MemoryInfo{
     name: ${this.name},
     speed: ${this.speed},
     capacity: ${this.capacity},
@@ -204,6 +206,6 @@ class Memoryinfo extends Hardwareinfo {
     swapAvailable: ${this.swapAvailable},
     committed: ${this.committed},
     cached: ${this.cached},
-)""";
+}""";
     }
 }

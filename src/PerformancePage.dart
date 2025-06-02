@@ -8,7 +8,6 @@ import 'systeminfo/HardwareInfo.dart';
 import 'main.dart';
 
 class PerformancePage {
-    Color color;
     String title;
 
     String subtitle = "";
@@ -25,12 +24,13 @@ class PerformancePage {
     List<String> sideStatValues = [];
     List<String> Function(PerformancePage) calcSideStatValues;
 
-    List<double> graphData = [];
+    List<Color> colors;
+    List<List<double>> graphDatas = [];
 
     Hardwareinfo info;
 
     PerformancePage({
-        required this.color,
+        required this.colors,
         required this.title,
         required this.info,
         required this.calcSubtitle,
@@ -39,8 +39,11 @@ class PerformancePage {
         required this.sideStatLabels,
         required this.calcSideStatValues,
         required this.calcGraphRightLabel,
+        int graphsDatasLen=1
     }) {
-        this.graphData = List.filled(60, 0);
+        for (int i = 0; i < graphsDatasLen; i++) {
+            this.graphDatas.add(List.filled(60, 0));
+        }
     }
 
     void renderSidebarItem(int y, bool selected) {
@@ -50,7 +53,7 @@ class PerformancePage {
             rect(0, y, sidebarEnd, 70);
         }
 
-        drawGraph(5, y + 5, 72, 59, this.color, this.graphData, false);
+        drawGraph(5, y + 5, 72, 59, this.colors, this.graphDatas, false);
 
         fill(0);
         textAlign(LEFT, BOTTOM);
@@ -85,7 +88,7 @@ class PerformancePage {
         final baseHeight = height - 12;
         final sideStatsY = baseHeight - Math.max((this.statLabels.length - 1) * 56 + 24, (this.sideStatLabels.length - 1) * 22);
 
-        drawGraph(leftEdge, 110, pageWidth, (sideStatsY - 110 - 27).toInt(), this.color, this.graphData, true);        
+        drawGraph(leftEdge, 110, pageWidth, (sideStatsY - 110 - 27).toInt(), this.colors, this.graphDatas, true);        
 
         // stat labels
         textSize(15);
@@ -147,10 +150,13 @@ class PerformancePage {
     void update() {
         this.info.updateDynamicStats();
 
-        var data = this.graphData;
-        final len = data.length;
-        for (int i = 0; i < len; i++) {
-            data[i] = (i + 1 < len) ? data[i + 1] : (this.info.utilization / 100);
+        for (int i = 0; i < this.graphDatas.length; i++) {
+            var data = this.graphDatas[i];
+            var utilization = this.info.utilization[i];
+            final len = data.length;
+            for (int i = 0; i < len; i++) {
+                data[i] = (i + 1 < len) ? data[i + 1] : (utilization / 100);
+            }
         }
 
         this.subtitle = this.calcSubtitle(this);
